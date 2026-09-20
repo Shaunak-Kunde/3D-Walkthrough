@@ -1,0 +1,2517 @@
+from flask import Flask, render_template_string
+
+app = Flask(__name__)
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Walkthrough - Sloping Bedroom Ceiling Update</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #1a1a1a;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            pointer-events: none;
+            border: 1px solid #000;
+            max-width: 440px;
+        }
+
+        #instructions {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #1a1a1a;
+            background: rgba(255, 255, 255, 0.98);
+            padding: 24px 36px;
+            border-radius: 12px;
+            text-align: center;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+            border: 2px solid #000;
+        }
+    </style>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+</head>
+
+<body>
+
+    <div id="info">
+        <b>3D Architectural Walkthrough - Sloping Bedroom Ceiling</b><br>
+        • Sloping Bedroom Ceiling (4.0m Height at Z=0.0 Wall down to 3.0m at Z=4.5 Wall)<br>
+        • Non-bedroom wall height restricted to 2.4m<br>
+        • Adjusted Ceiling Fan, Sloped Wooden Borders, & Angled Lights<br>
+        • Bathroom Shower Tap Assembly (Light Color, Single Assembly) Retained
+    </div>
+
+    <div id="instructions">
+        <h2>Click to Enter 3D Walkthrough</h2>
+        <p><b>W, A, S, D</b> = Move | <b>Mouse</b> = Look around | <b>ESC</b> = Exit</p>
+    </div>
+
+    <script>
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xfcfcfc);
+
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            1000
+        );
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // --- AMBIENT & DIRECTIONAL LIGHTING ---
+        scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.35);
+        dirLight.position.set(6, 12, 6);
+        scene.add(dirLight);
+
+        // --- PROCEDURAL LIGHT GREY-BLUE WAVY PATTERN MARBLE TEXTURE ---
+        function createWavyMarbleTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#dbe3eb';
+            ctx.fillRect(0, 0, 512, 512);
+
+            ctx.strokeStyle = '#9fb0c7';
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 0.45;
+
+            for (let i = 0; i < 18; i++) {
+                ctx.beginPath();
+
+                let startX = Math.random() * 512;
+                let startY = -50;
+
+                ctx.moveTo(startX, startY);
+
+                let curX = startX;
+                let curY = startY;
+
+                while (curY < 562) {
+                    curY += 40;
+                    curX += (Math.random() - 0.5) * 120 +
+                            Math.sin(curY * 0.02) * 40;
+                    ctx.lineTo(curX, curY);
+                }
+
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = '#c5d1e0';
+            ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.6;
+
+            for (let i = 0; i < 25; i++) {
+                ctx.beginPath();
+
+                let startX = -50;
+                let startY = Math.random() * 512;
+
+                ctx.moveTo(startX, startY);
+
+                let curX = startX;
+                let curY = startY;
+
+                while (curX < 562) {
+                    curX += 40;
+                    curY += (Math.random() - 0.5) * 100 +
+                            Math.cos(curX * 0.02) * 35;
+                    ctx.lineTo(curX, curY);
+                }
+
+                ctx.stroke();
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(3, 3);
+
+            return texture;
+        }
+
+        const wavyMarbleTex = createWavyMarbleTexture();
+
+        // --- MATERIALS ---
+        const wallMat = new THREE.MeshStandardMaterial({
+            color: 0xfffbe6,
+            roughness: 0.4,
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1
+        });
+
+        const marbleMat = new THREE.MeshStandardMaterial({
+            map: wavyMarbleTex,
+            roughness: 0.25,
+            metalness: 0.05,
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1
+        });
+
+        const windowGlassMat = new THREE.MeshStandardMaterial({
+            color: 0xbae0f2,
+            transparent: true,
+            opacity: 0.35,
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1
+        });
+
+        const glassCabinetMat = new THREE.MeshStandardMaterial({
+            color: 0xe0f7fa,
+            transparent: true,
+            opacity: 0.55,
+            roughness: 0.1,
+            metalness: 0.1
+        });
+
+        const roofSlabMat = new THREE.MeshStandardMaterial({
+            color: 0xcccccc,
+            roughness: 0.5,
+            side: THREE.DoubleSide,
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1
+        });
+
+        const bedMat = new THREE.MeshStandardMaterial({
+            color: 0xeb6b6b,
+            roughness: 0.6
+        });
+
+        const cupboardMat = new THREE.MeshStandardMaterial({
+            color: 0x5d4037,
+            roughness: 0.5
+        });
+
+        const whiteMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.2
+        });
+
+        const woodBorderMat = new THREE.MeshStandardMaterial({
+            color: 0x8d5524,
+            roughness: 0.5
+        });
+
+        const silverMetalMat = new THREE.MeshStandardMaterial({
+            color: 0xdddddd,
+            metalness: 0.9,
+            roughness: 0.1
+        });
+
+        const lightShowerAssemblyMat = new THREE.MeshStandardMaterial({
+            color: 0xf0f4f8,
+            metalness: 0.4,
+            roughness: 0.3
+        });
+
+        const goldenMetalMat = new THREE.MeshStandardMaterial({
+            color: 0xd4af37,
+            metalness: 0.8,
+            roughness: 0.2
+        });
+
+        const reflectiveMirrorMat = new THREE.MeshStandardMaterial({
+            color: 0xf8f9fa,
+            metalness: 0.98,
+            roughness: 0.02
+        });
+
+        const yellowChairMat = new THREE.MeshStandardMaterial({
+            color: 0xffca28,
+            roughness: 0.4
+        });
+
+        const chairLegMat = new THREE.MeshStandardMaterial({
+            color: 0x212121,
+            roughness: 0.3
+        });
+
+        const basinCabinetMat = new THREE.MeshStandardMaterial({
+            color: 0x424242,
+            roughness: 0.4
+        });
+
+        const basinMat = new THREE.MeshStandardMaterial({
+            color: 0xf5f5f5,
+            roughness: 0.2
+        });
+
+        const commodeMat = new THREE.MeshStandardMaterial({
+            color: 0xfafafa,
+            roughness: 0.2
+        });
+
+        const ledStripMat = new THREE.MeshBasicMaterial({
+            color: 0xfff3e0
+        });
+
+        const showcaseLightMat = new THREE.MeshBasicMaterial({
+            color: 0xffd54f
+        });
+
+        const spotLightFixtureMat = new THREE.MeshStandardMaterial({
+            color: 0x222222,
+            roughness: 0.2
+        });
+
+        const spotLightLensMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff
+        });
+
+        const edgeLineMat = new THREE.LineBasicMaterial({
+            color: 0x000000,
+            linewidth: 1
+        });
+
+        // ============================================================
+        // WALL HEIGHTS
+        // ============================================================
+
+        // All non-bedroom full-height walls are restricted to 2.4m.
+        const FLAT_WALL_H = 2.4;
+
+        const HALF_WALL_H = 1.1;
+        const DOOR_H = 2.0;
+
+        // ============================================================
+        // BASIC HELPERS
+        // ============================================================
+
+        function addBlackBorders(mesh) {
+            const edges = new THREE.EdgesGeometry(mesh.geometry);
+            const line = new THREE.LineSegments(edges, edgeLineMat);
+            mesh.add(line);
+        }
+
+        function drawVerticalLine(
+            x,
+            z,
+            yStart = 0,
+            yEnd = FLAT_WALL_H
+        ) {
+            const points = [
+                new THREE.Vector3(x, yStart, z),
+                new THREE.Vector3(x, yEnd, z)
+            ];
+
+            const geo = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geo, edgeLineMat);
+            scene.add(line);
+        }
+
+        function createWall(
+            x1,
+            y1,
+            x2,
+            y2,
+            thickness,
+            height,
+            mat,
+            yOffset = 0
+        ) {
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+
+            const length = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx);
+
+            const geo = new THREE.BoxGeometry(
+                length,
+                height,
+                thickness
+            );
+
+            const mesh = new THREE.Mesh(geo, mat);
+
+            mesh.position.set(
+                (x1 + x2) / 2,
+                yOffset + height / 2,
+                (y1 + y2) / 2
+            );
+
+            mesh.rotation.y = -angle;
+
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            addBlackBorders(mesh);
+            scene.add(mesh);
+
+            return mesh;
+        }
+
+        // ============================================================
+        // BEDROOM SLOPING SIDE WALL
+        // ============================================================
+
+        // Bedroom geometry remains independent from the 2.4m flat walls.
+        function createSlopingSideWall(x, thickness, zStart = 0) {
+            const zEnd = 4.5;
+            const depth =  zEnd - zStart;
+
+            // Ceiling height at the start of the sloped wall
+            const startHeight = 4.0 - (zStart / 4.5) ;
+
+            const shape = new THREE.Shape();
+            shape.moveTo(0, 0);
+            shape.lineTo(depth, 0);
+            shape.lineTo(depth, startHeight);
+            shape.lineTo(0, 3);
+            shape.closePath();
+
+            const extrudeSettings = {
+                steps: 1,
+                depth: thickness,
+                bevelEnabled: false
+            };
+
+            const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            const mesh = new THREE.Mesh(geo, wallMat);
+
+            mesh.position.set(
+                x - thickness / 2,
+                0,
+                zEnd
+            );
+
+            mesh.rotation.y = Math.PI / 2;
+
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            addBlackBorders(mesh);
+            scene.add(mesh);
+        }
+
+        // ============================================================
+        // ORIGINAL BEDROOM WINDOW WALL
+        // DO NOT CHANGE - BEDROOM USES ITS OWN HEIGHT
+        // ============================================================
+
+        function createWindowWall(
+            x1,
+            y1,
+            x2,
+            y2,
+            thickness
+        ) {
+            createWall(
+                x1,
+                y1,
+                x2,
+                y2,
+                thickness,
+                1.0,
+                wallMat,
+                0.0
+            );
+
+            createWall(
+                x1,
+                y1,
+                x2,
+                y2,
+                thickness,
+                1.2,
+                windowGlassMat,
+                1.0
+            );
+
+            createWall(
+                x1,
+                y1,
+                x2,
+                y2,
+                thickness,
+                1.8,
+                wallMat,
+                2.2
+            );
+        }
+
+        // ============================================================
+        // ORIGINAL BEDROOM DOOR LINTEL
+        // DO NOT CHANGE - BEDROOM USES ITS OWN HEIGHT
+        // ============================================================
+
+        function createDoorLintel(
+            x1,
+            y1,
+            x2,
+            y2,
+            thickness,
+            mat
+        ) {
+            const lintelHeight = 4.0 - DOOR_H;
+
+            createWall(
+                x1,
+                y1,
+                x2,
+                y2,
+                thickness,
+                lintelHeight,
+                mat,
+                DOOR_H
+            );
+        }
+
+        // ============================================================
+        // NEW FLAT 2.4m WINDOW WALL FOR NON-BEDROOM AREAS
+        // ============================================================
+
+        function createFlatWindowWall(
+            x1,
+            y1,
+            x2,
+            y2,
+            thickness,
+            mat = wallMat
+        ) {
+            // Solid lower portion
+            createWall(
+                x1,
+                y1,
+                x2,
+                y2,
+                thickness,
+                1.0,
+                mat,
+                0.0
+            );
+
+            // Window glass
+            createWall(
+                x1,
+                y1,
+                x2,
+                y2,
+                thickness,
+                1.2,
+                windowGlassMat,
+                1.0
+            );
+
+            // Solid section above window
+            // 2.2 -> 2.4m
+            createWall(
+                x1,
+                y1,
+                x2,
+                y2,
+                thickness,
+                0.2,
+                mat,
+                2.2
+            );
+        }
+
+        // ============================================================
+        // NEW FLAT 2.4m DOOR LINTEL FOR NON-BEDROOM AREAS
+        // ============================================================
+
+        function createFlatDoorLintel(
+            x1,
+            y1,
+            x2,
+            y2,
+            thickness,
+            mat
+        ) {
+            const lintelHeight = FLAT_WALL_H - DOOR_H;
+
+            createWall(
+                x1,
+                y1,
+                x2,
+                y2,
+                thickness,
+                lintelHeight,
+                mat,
+                DOOR_H
+            );
+        }
+
+        // ============================================================
+        // FLOOR
+        // ============================================================
+
+        function createFloor(
+            width,
+            depth,
+            centerX,
+            centerZ,
+            mat
+        ) {
+            const geo = new THREE.BoxGeometry(
+                width,
+                0.02,
+                depth
+            );
+
+            const mesh = new THREE.Mesh(geo, mat);
+
+            mesh.position.set(
+                centerX,
+                -0.01,
+                centerZ
+            );
+
+            mesh.receiveShadow = true;
+
+            addBlackBorders(mesh);
+            scene.add(mesh);
+        }
+
+        // ============================================================
+        // SLOPING BEDROOM ROOF SLAB
+        // ============================================================
+
+        function createSlopingRoofSlab() {
+            const width = 4.0;
+            const depth = 4.5;
+            const thickness = 0.1;
+
+            const geo = new THREE.BoxGeometry(
+                width,
+                thickness,
+                depth
+            );
+
+            const mesh = new THREE.Mesh(
+                geo,
+                roofSlabMat
+            );
+
+            mesh.position.set(
+                2.0,
+                3.55,
+                2.25
+            );
+
+            mesh.rotation.x = Math.atan(1.0 / 4.5);
+
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            addBlackBorders(mesh);
+            scene.add(mesh);
+        }
+
+        // ============================================================
+        // FLAT ROOF SLAB
+        // NOW AUTOMATICALLY AT 2.4m
+        // ============================================================
+
+        function createRoofSlab(
+            width,
+            depth,
+            centerX,
+            centerZ
+        ) {
+            const geo = new THREE.BoxGeometry(
+                width,
+                0.1,
+                depth
+            );
+
+            const mesh = new THREE.Mesh(
+                geo,
+                roofSlabMat
+            );
+
+            mesh.position.set(
+                centerX,
+                FLAT_WALL_H + 0.05,
+                centerZ
+            );
+
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            addBlackBorders(mesh);
+            scene.add(mesh);
+        }
+
+        // ============================================================
+        // SLOPING BEDROOM CEILING BORDERS
+        // ============================================================
+
+        function addSlopingCeilingBorder(
+            x1,
+            z1,
+            x2,
+            z2,
+            width = 0.4
+        ) {
+            const dx = x2 - x1;
+            const dz = z2 - z1;
+
+            const length = Math.sqrt(
+                dx * dx + dz * dz
+            );
+
+            const angle = Math.atan2(dz, dx);
+
+            const borderGeo = new THREE.BoxGeometry(
+                length,
+                0.04,
+                width
+            );
+
+            const borderMesh = new THREE.Mesh(
+                borderGeo,
+                woodBorderMat
+            );
+
+            let avgZ = (z1 + z2) / 2;
+
+            let avgY =
+                4.0 -
+                (avgZ / 4.5) * 1.0 -
+                0.02;
+
+            borderMesh.position.set(
+                (x1 + x2) / 2,
+                avgY,
+                avgZ
+            );
+
+            borderMesh.rotation.y = -angle;
+            borderMesh.rotation.x = Math.atan(1.0 / 4.5);
+
+            addBlackBorders(borderMesh);
+            scene.add(borderMesh);
+        }
+
+        // Sloping Bedroom Ceiling Borders
+        addSlopingCeilingBorder(
+            0.2, 0.2,
+            3.8, 0.2,
+            0.4
+        );
+
+        addSlopingCeilingBorder(
+            3.8, 0.2,
+            3.8, 4.3,
+            0.4
+        );
+
+        addSlopingCeilingBorder(
+            3.8, 4.3,
+            0.2, 4.3,
+            0.4
+        );
+
+        addSlopingCeilingBorder(
+            0.2, 4.3,
+            0.2, 0.2,
+            0.4
+        );
+
+        // ============================================================
+        // FLAT CEILING BORDERS
+        // These now sit at 2.4m
+        // ============================================================
+
+        function addCeilingBorder(
+            x1,
+            z1,
+            x2,
+            z2,
+            width = 0.4
+        ) {
+            const dx = x2 - x1;
+            const dz = z2 - z1;
+
+            const length = Math.sqrt(
+                dx * dx + dz * dz
+            );
+
+            const angle = Math.atan2(dz, dx);
+
+            const borderGeo = new THREE.BoxGeometry(
+                length,
+                0.04,
+                width
+            );
+
+            const borderMesh = new THREE.Mesh(
+                borderGeo,
+                woodBorderMat
+            );
+
+            borderMesh.position.set(
+                (x1 + x2) / 2,
+                FLAT_WALL_H - 0.02,
+                (z1 + z2) / 2
+            );
+
+            borderMesh.rotation.y = -angle;
+
+            addBlackBorders(borderMesh);
+            scene.add(borderMesh);
+        }
+
+        // Bathroom ceiling borders
+        addCeilingBorder(
+            1.7, 4.7,
+            2.8, 4.7,
+            0.4
+        );
+
+        addCeilingBorder(
+            2.8, 4.7,
+            2.8, 7.8,
+            0.4
+        );
+
+        addCeilingBorder(
+            2.8, 7.8,
+            1.7, 7.8,
+            0.4
+        );
+
+        addCeilingBorder(
+            1.7, 7.8,
+            1.7, 4.7,
+            0.4
+        );
+
+        // Gallery Ceiling Borders
+        addCeilingBorder(
+            1.65, 8.05,
+            3.85, 8.05,
+            0.1
+        );
+
+        addCeilingBorder(
+            3.85, 8.05,
+            3.85, 8.95,
+            0.1
+        );
+
+        addCeilingBorder(
+            3.85, 8.95,
+            1.65, 8.95,
+            0.1
+        );
+
+        addCeilingBorder(
+            1.65, 8.95,
+            1.65, 8.05,
+            0.1
+        );
+
+        // ============================================================
+        // CEILING SPOTLIGHT
+        // ============================================================
+
+        function addCeilingSpotlight(
+            x,
+            y,
+            z,
+            intensity = 0.35
+        ) {
+            const fixtureGeo =
+                new THREE.CylinderGeometry(
+                    0.08,
+                    0.08,
+                    0.02,
+                    16
+                );
+
+            const fixtureMesh = new THREE.Mesh(
+                fixtureGeo,
+                spotLightFixtureMat
+            );
+
+            fixtureMesh.position.set(
+                x,
+                y - 0.01,
+                z
+            );
+
+            scene.add(fixtureMesh);
+
+            const lensGeo =
+                new THREE.CylinderGeometry(
+                    0.06,
+                    0.06,
+                    0.021,
+                    16
+                );
+
+            const lensMesh = new THREE.Mesh(
+                lensGeo,
+                spotLightLensMat
+            );
+
+            lensMesh.position.set(
+                x,
+                y - 0.01,
+                z
+            );
+
+            scene.add(lensMesh);
+
+            const pLight = new THREE.PointLight(
+                0xfff7e6,
+                intensity,
+                4.0
+            );
+
+            pLight.position.set(
+                x,
+                y - 0.1,
+                z
+            );
+
+            scene.add(pLight);
+        }
+
+        // ============================================================
+        // BEDROOM CEILING FAN
+        // ============================================================
+
+        function addCeilingFan(x, z) {
+            const ceilingY =
+                4.0 -
+                (z / 4.5) * 1.0;
+
+            const rodGeo =
+                new THREE.CylinderGeometry(
+                    0.02,
+                    0.02,
+                    0.3,
+                    16
+                );
+
+            const rodMesh = new THREE.Mesh(
+                rodGeo,
+                whiteMat
+            );
+
+            rodMesh.position.set(
+                x,
+                ceilingY - 0.15,
+                z
+            );
+
+            rodMesh.rotation.x =
+                Math.atan(1.0 / 4.5);
+
+            addBlackBorders(rodMesh);
+            scene.add(rodMesh);
+
+            const motorGeo =
+                new THREE.CylinderGeometry(
+                    0.18,
+                    0.15,
+                    0.12,
+                    24
+                );
+
+            const motorMesh = new THREE.Mesh(
+                motorGeo,
+                whiteMat
+            );
+
+            motorMesh.position.set(
+                x,
+                ceilingY - 0.32,
+                z
+            );
+
+            addBlackBorders(motorMesh);
+            scene.add(motorMesh);
+
+            const capGeo =
+                new THREE.SphereGeometry(
+                    0.08,
+                    16,
+                    16,
+                    0,
+                    Math.PI * 2,
+                    0,
+                    Math.PI / 2
+                );
+
+            const capMesh = new THREE.Mesh(
+                capGeo,
+                whiteMat
+            );
+
+            capMesh.rotation.x = Math.PI;
+
+            capMesh.position.set(
+                x,
+                ceilingY - 0.38,
+                z
+            );
+
+            scene.add(capMesh);
+
+            const bladeGeo =
+                new THREE.BoxGeometry(
+                    0.85,
+                    0.012,
+                    0.13
+                );
+
+            for (let i = 0; i < 4; i++) {
+                const bladeMesh = new THREE.Mesh(
+                    bladeGeo,
+                    whiteMat
+                );
+
+                const angle =
+                    (i * Math.PI) / 2;
+
+                bladeMesh.position.set(
+                    x + Math.cos(angle) * 0.45,
+                    ceilingY - 0.33,
+                    z + Math.sin(angle) * 0.45
+                );
+
+                bladeMesh.rotation.y = -angle;
+
+                addBlackBorders(bladeMesh);
+                scene.add(bladeMesh);
+            }
+        }
+
+        addCeilingFan(2.0, 2.25);
+
+        // ============================================================
+        // FLOORING & ROOF SLABS
+        // ============================================================
+
+        createFloor(
+            4.0,
+            4.5,
+            2.0,
+            2.25,
+            marbleMat
+        );
+
+        createFloor(
+            2.5,
+            4.5,
+            2.75,
+            6.75,
+            marbleMat
+        );
+
+        createSlopingRoofSlab();
+
+        createRoofSlab(
+            2.5,
+            4.5,
+            2.75,
+            6.75
+        );
+
+        // ============================================================
+        // 1. MAIN BEDROOM WALLS
+        // BEDROOM HEIGHTS ARE LEFT UNCHANGED
+        // ============================================================
+
+        createDoorLintel(
+            0.0,
+            0.0,
+            0.9,
+            0.0,
+            0.15,
+            wallMat
+        );
+
+        createWall(
+            0.9,
+            0.0,
+            4.0,
+            0.0,
+            0.15,
+            4.0,
+            wallMat
+        );
+
+        createSlopingSideWall(
+            0.0,
+            0.15
+        );
+
+        createWindowWall(
+            4.0,
+            0.0,
+            4.0,
+            1.0,
+            0.15
+        );
+
+        createSlopingSideWall(
+            4.0,
+            0.15,
+            1.0
+        );
+
+        createWall(
+            0.0,
+            4.5,
+            3.0,
+            4.5,
+            0.15,
+            3.0,
+            wallMat
+        );
+
+        createWall(
+            3.0,
+            4.5,
+            4.0,
+            4.5,
+            0.15,
+            1.0,
+            wallMat,
+            2.0
+        );
+
+        // ============================================================
+        // 2. EXTENSION PASSAGE WALLS
+        // RESTRICTED TO 2.4m
+        // ============================================================
+
+        createFlatWindowWall(
+            4.0,
+            4.5,
+            4.0,
+            8.0,
+            0.15
+        );
+
+        // ============================================================
+        // 3. BATHROOM WALLS
+        // RESTRICTED TO 2.4m
+        // ============================================================
+
+        createWall(
+            1.5,
+            5.5,
+            3.0,
+            5.5,
+            0.15,
+            2.4,
+            marbleMat
+        );
+
+        createFlatDoorLintel(
+            3.0,
+            5.5,
+            3.0,
+            6.5,
+            0.15,
+            marbleMat
+        );
+
+        createWall(
+            1.5,
+            4.5,
+            1.5,
+            8.0,
+            0.15,
+            2.4,
+            marbleMat
+        );
+
+        createWall(
+            3.0,
+            6.5,
+            3.0,
+            8.0,
+            0.15,
+            2.4,
+            marbleMat
+        );
+
+        // Bathroom right wall mirror
+        const bathMirrorGeo =
+            new THREE.BoxGeometry(
+                0.02,
+                2.3,
+                1.45
+            );
+
+        const bathMirrorMesh =
+            new THREE.Mesh(
+                bathMirrorGeo,
+                reflectiveMirrorMat
+            );
+
+        bathMirrorMesh.position.set(
+            2.91,
+            2.3 / 2,
+            7.25
+        );
+
+        addBlackBorders(bathMirrorMesh);
+        scene.add(bathMirrorMesh);
+
+        // ============================================================
+        // 4. TOP BATHROOM WALL WITH VENTILATION WINDOW
+        // TOTAL HEIGHT = 2.4m
+        // ============================================================
+
+        createWall(
+            1.5,
+            8.0,
+            3.0,
+            8.0,
+            0.15,
+            2.2,
+            marbleMat,
+            0.0
+        );
+
+        createWall(
+            1.5,
+            8.0,
+            3.0,
+            8.0,
+            0.15,
+            0.2,
+            windowGlassMat,
+            2.2
+        );
+
+        // ============================================================
+        // 5. GALLERY WALLS
+        // ============================================================
+
+        // Gallery entrance door lintel restricted to 2.4m
+        createFlatDoorLintel(
+            3.0,
+            8.0,
+            4.0,
+            8.0,
+            0.15,
+            wallMat
+        );
+
+        // Intentional half-walls remain 1.1m
+        createWall(
+            1.5,
+            8.0,
+            1.5,
+            9.0,
+            0.15,
+            HALF_WALL_H,
+            windowGlassMat
+        );
+
+        createWall(
+            4.0,
+            8.0,
+            4.0,
+            9.0,
+            0.15,
+            HALF_WALL_H,
+            windowGlassMat
+        );
+
+        createWall(
+            1.5,
+            9.0,
+            4.0,
+            9.0,
+            0.15,
+            HALF_WALL_H,
+            windowGlassMat
+        );
+
+        // ============================================================
+        // 6. CEILING LIGHTING
+        // ============================================================
+
+        // Bedroom lights - unchanged
+        addCeilingSpotlight(
+            1.0,
+            4.0 - (1.2 / 4.5) * 1.0,
+            1.2
+        );
+
+        addCeilingSpotlight(
+            3.0,
+            4.0 - (1.2 / 4.5) * 1.0,
+            1.2
+        );
+
+        addCeilingSpotlight(
+            1.0,
+            4.0 - (2.8 / 4.5) * 1.0,
+            2.8
+        );
+
+        addCeilingSpotlight(
+            3.0,
+            4.0 - (2.8 / 4.5) * 1.0,
+            2.8
+        );
+
+        // Bathroom / flat-area lights now use 2.4m
+        addCeilingSpotlight(
+            3.5,
+            FLAT_WALL_H,
+            5.0
+        );
+
+        addCeilingSpotlight(
+            2.25,
+            FLAT_WALL_H,
+            5.0
+        );
+
+        addCeilingSpotlight(
+            3.5,
+            FLAT_WALL_H,
+            6.75
+        );
+
+        addCeilingSpotlight(
+            2.25,
+            FLAT_WALL_H,
+            6.0
+        );
+
+        addCeilingSpotlight(
+            2.25,
+            FLAT_WALL_H,
+            7.3
+        );
+
+        // Gallery Ceiling Spotlights
+        addCeilingSpotlight(
+            2.25,
+            FLAT_WALL_H,
+            8.5
+        );
+
+        addCeilingSpotlight(
+            3.50,
+            FLAT_WALL_H,
+            8.5
+        );
+
+        // ============================================================
+        // 7. FURNITURE & FIXTURES
+        // ============================================================
+
+        const bedBaseGeo =
+            new THREE.BoxGeometry(
+                2.0,
+                0.5,
+                1.8
+            );
+
+        const bedMesh =
+            new THREE.Mesh(
+                bedBaseGeo,
+                bedMat
+            );
+
+        bedMesh.position.set(
+            2.925,
+            0.25,
+            1.95
+        );
+
+        addBlackBorders(bedMesh);
+        scene.add(bedMesh);
+
+        const headboardGeo =
+            new THREE.BoxGeometry(
+                0.1,
+                1.1,
+                1.8
+            );
+
+        const headboardMesh =
+            new THREE.Mesh(
+                headboardGeo,
+                bedMat
+            );
+
+        headboardMesh.position.set(
+            3.875,
+            0.55,
+            1.95
+        );
+
+        addBlackBorders(headboardMesh);
+        scene.add(headboardMesh);
+
+        // CUPBOARD
+        const cupboardGeo =
+            new THREE.BoxGeometry(
+                0.6,
+                2.2,
+                2.5
+            );
+
+        const cupboardMesh =
+            new THREE.Mesh(
+                cupboardGeo,
+                cupboardMat
+            );
+
+        cupboardMesh.position.set(
+            0.375,
+            1.1,
+            3.175
+        );
+
+        addBlackBorders(cupboardMesh);
+        scene.add(cupboardMesh);
+
+        // VERTICAL GOLDEN HANDLES
+        const goldHandleGeo =
+            new THREE.BoxGeometry(
+                0.03,
+                0.4,
+                0.03
+            );
+
+        const goldHandle1 =
+            new THREE.Mesh(
+                goldHandleGeo,
+                goldenMetalMat
+            );
+
+        goldHandle1.position.set(
+            0.69,
+            1.2,
+            2.6
+        );
+
+        addBlackBorders(goldHandle1);
+        scene.add(goldHandle1);
+
+        const goldHandle2 =
+            new THREE.Mesh(
+                goldHandleGeo,
+                goldenMetalMat
+            );
+
+        goldHandle2.position.set(
+            0.69,
+            1.2,
+            3.8
+        );
+
+        addBlackBorders(goldHandle2);
+        scene.add(goldHandle2);
+
+        // SHOWCASE
+        const showcaseGeo =
+            new THREE.BoxGeometry(
+                0.64,
+                0.45,
+                0.6
+            );
+
+        const showcaseMesh =
+            new THREE.Mesh(
+                showcaseGeo,
+                whiteMat
+            );
+
+        showcaseMesh.position.set(
+            0.375,
+            0.225,
+            4.65
+        );
+
+        addBlackBorders(showcaseMesh);
+        scene.add(showcaseMesh);
+
+        const showcaseNicheGeo =
+            new THREE.BoxGeometry(
+                0.04,
+                0.35,
+                0.5
+            );
+
+        const showcaseNicheMesh =
+            new THREE.Mesh(
+                showcaseNicheGeo,
+                showcaseLightMat
+            );
+
+        showcaseNicheMesh.position.set(
+            0.67,
+            0.225,
+            4.65
+        );
+
+        scene.add(showcaseNicheMesh);
+
+        const showcasePointLight =
+            new THREE.PointLight(
+                0xffd54f,
+                0.3,
+                2.0
+            );
+
+        showcasePointLight.position.set(
+            0.55,
+            0.225,
+            4.65
+        );
+
+        scene.add(showcasePointLight);
+
+        // MIRROR ON CUPBOARD
+        const mirrorFrameGeo =
+            new THREE.BoxGeometry(
+                0.02,
+                1.84,
+                0.84
+            );
+
+        const mirrorFrameMesh =
+            new THREE.Mesh(
+                mirrorFrameGeo,
+                whiteMat
+            );
+
+        mirrorFrameMesh.position.set(
+            0.681,
+            1.1,
+            3.175
+        );
+
+        addBlackBorders(mirrorFrameMesh);
+        scene.add(mirrorFrameMesh);
+
+        const mirrorGeo =
+            new THREE.BoxGeometry(
+                0.02,
+                1.8,
+                0.8
+            );
+
+        const mirrorMesh =
+            new THREE.Mesh(
+                mirrorGeo,
+                reflectiveMirrorMat
+            );
+
+        mirrorMesh.position.set(
+            0.685,
+            1.1,
+            3.175
+        );
+
+        addBlackBorders(mirrorMesh);
+        scene.add(mirrorMesh);
+
+        // AC
+        const acGeo =
+            new THREE.BoxGeometry(
+                1.0,
+                0.35,
+                0.25
+            );
+
+        const acMesh =
+            new THREE.Mesh(
+                acGeo,
+                whiteMat
+            );
+
+        acMesh.position.set(
+            2.5,
+            2.4,
+            4.35
+        );
+
+        addBlackBorders(acMesh);
+        scene.add(acMesh);
+
+        // YELLOW CHAIR UNDER AC
+        const chairSeatGeo =
+            new THREE.BoxGeometry(
+                0.5,
+                0.06,
+                0.5
+            );
+
+        const chairSeatMesh =
+            new THREE.Mesh(
+                chairSeatGeo,
+                yellowChairMat
+            );
+
+        chairSeatMesh.position.set(
+            2.5,
+            0.45,
+            4.15
+        );
+
+        addBlackBorders(chairSeatMesh);
+        scene.add(chairSeatMesh);
+
+        const chairBackGeo =
+            new THREE.BoxGeometry(
+                0.48,
+                0.4,
+                0.04
+            );
+
+        const chairBackMesh =
+            new THREE.Mesh(
+                chairBackGeo,
+                yellowChairMat
+            );
+
+        chairBackMesh.position.set(
+            2.5,
+            0.68,
+            4.38
+        );
+
+        addBlackBorders(chairBackMesh);
+        scene.add(chairBackMesh);
+
+        const legGeo =
+            new THREE.BoxGeometry(
+                0.03,
+                0.45,
+                0.03
+            );
+
+        const legPositions = [
+            [2.28, 0.225, 3.93],
+            [2.72, 0.225, 3.93],
+            [2.28, 0.225, 4.37],
+            [2.72, 0.225, 4.37]
+        ];
+
+        legPositions.forEach(pos => {
+            const legMesh =
+                new THREE.Mesh(
+                    legGeo,
+                    chairLegMat
+                );
+
+            legMesh.position.set(...pos);
+
+            addBlackBorders(legMesh);
+            scene.add(legMesh);
+        });
+
+        // DESK
+        const deskTopGeo =
+            new THREE.BoxGeometry(
+                0.6,
+                0.05,
+                0.9
+            );
+
+        const deskTopMesh =
+            new THREE.Mesh(
+                deskTopGeo,
+                whiteMat
+            );
+
+        deskTopMesh.position.set(
+            3.625,
+            0.975,
+            0.5
+        );
+
+        addBlackBorders(deskTopMesh);
+        scene.add(deskTopMesh);
+
+        const deskLegGeo =
+            new THREE.BoxGeometry(
+                0.04,
+                0.95,
+                0.04
+            );
+
+        const deskLegPositions = [
+            [3.35, 0.475, 0.1],
+            [3.90, 0.475, 0.1],
+            [3.35, 0.475, 0.9],
+            [3.90, 0.475, 0.9]
+        ];
+
+        deskLegPositions.forEach(pos => {
+            const legMesh =
+                new THREE.Mesh(
+                    deskLegGeo,
+                    chairLegMat
+                );
+
+            legMesh.position.set(...pos);
+
+            addBlackBorders(legMesh);
+            scene.add(legMesh);
+        });
+
+        const deskChairSeatGeo =
+            new THREE.BoxGeometry(
+                0.45,
+                0.05,
+                0.45
+            );
+
+        const deskChairSeatMesh =
+            new THREE.Mesh(
+                deskChairSeatGeo,
+                yellowChairMat
+            );
+
+        deskChairSeatMesh.position.set(
+            3.0,
+            0.5,
+            0.5
+        );
+
+        addBlackBorders(deskChairSeatMesh);
+        scene.add(deskChairSeatMesh);
+
+        const deskChairBackGeo =
+            new THREE.BoxGeometry(
+                0.04,
+                0.45,
+                0.45
+            );
+
+        const deskChairBackMesh =
+            new THREE.Mesh(
+                deskChairBackGeo,
+                yellowChairMat
+            );
+
+        deskChairBackMesh.position.set(
+            2.78,
+            0.75,
+            0.5
+        );
+
+        addBlackBorders(deskChairBackMesh);
+        scene.add(deskChairBackMesh);
+
+        const dLegGeo =
+            new THREE.BoxGeometry(
+                0.03,
+                0.475,
+                0.03
+            );
+
+        const dLegPositions = [
+            [2.80, 0.2375, 0.3],
+            [3.20, 0.2375, 0.3],
+            [2.80, 0.2375, 0.7],
+            [3.20, 0.2375, 0.7]
+        ];
+
+        dLegPositions.forEach(pos => {
+            const legMesh =
+                new THREE.Mesh(
+                    dLegGeo,
+                    chairLegMat
+                );
+
+            legMesh.position.set(...pos);
+
+            addBlackBorders(legMesh);
+            scene.add(legMesh);
+        });
+
+        // ============================================================
+        // BATHROOM BASIN & COUNTER
+        // ============================================================
+
+        const basinCounterGeo =
+            new THREE.BoxGeometry(
+                0.45,
+                0.75,
+                0.8
+            );
+
+        const basinCounterMesh =
+            new THREE.Mesh(
+                basinCounterGeo,
+                basinCabinetMat
+            );
+
+        basinCounterMesh.position.set(
+            1.8,
+            0.375,
+            5.0
+        );
+
+        addBlackBorders(basinCounterMesh);
+        scene.add(basinCounterMesh);
+
+        const basinGeo =
+            new THREE.BoxGeometry(
+                0.35,
+                0.15,
+                0.6
+            );
+
+        const basinMesh =
+            new THREE.Mesh(
+                basinGeo,
+                basinMat
+            );
+
+        basinMesh.position.set(
+            1.8,
+            0.825,
+            5.0
+        );
+
+        addBlackBorders(basinMesh);
+        scene.add(basinMesh);
+
+        // BASIN TAP
+        const basinTapBaseGeo =
+            new THREE.CylinderGeometry(
+                0.015,
+                0.015,
+                0.15,
+                16
+            );
+
+        const basinTapBaseMesh =
+            new THREE.Mesh(
+                basinTapBaseGeo,
+                silverMetalMat
+            );
+
+        basinTapBaseMesh.position.set(
+            1.65,
+            0.92,
+            5.0
+        );
+
+        addBlackBorders(basinTapBaseMesh);
+        scene.add(basinTapBaseMesh);
+
+        const basinTapSpoutGeo =
+            new THREE.BoxGeometry(
+                0.08,
+                0.02,
+                0.02
+            );
+
+        const basinTapSpoutMesh =
+            new THREE.Mesh(
+                basinTapSpoutGeo,
+                silverMetalMat
+            );
+
+        basinTapSpoutMesh.position.set(
+            1.70,
+            0.98,
+            5.0
+        );
+
+        addBlackBorders(basinTapSpoutMesh);
+        scene.add(basinTapSpoutMesh);
+
+        // BASIN MIRROR
+        const basinMirrorFrameGeo =
+            new THREE.BoxGeometry(
+                0.02,
+                1.04,
+                0.64
+            );
+
+        const basinMirrorFrameMesh =
+            new THREE.Mesh(
+                basinMirrorFrameGeo,
+                whiteMat
+            );
+
+        basinMirrorFrameMesh.position.set(
+            1.571,
+            1.4,
+            5.0
+        );
+
+        addBlackBorders(basinMirrorFrameMesh);
+        scene.add(basinMirrorFrameMesh);
+
+        const basinMirrorGeo =
+            new THREE.BoxGeometry(
+                0.02,
+                1.0,
+                0.6
+            );
+
+        const basinMirrorMesh =
+            new THREE.Mesh(
+                basinMirrorGeo,
+                reflectiveMirrorMat
+            );
+
+        basinMirrorMesh.position.set(
+            1.575,
+            1.4,
+            5.0
+        );
+
+        addBlackBorders(basinMirrorMesh);
+        scene.add(basinMirrorMesh);
+
+        // ============================================================
+        // SHOWER TAP ASSEMBLY
+        // ============================================================
+
+        function addShowerTapAssembly(x, y, z) {
+            const plateGeo =
+                new THREE.BoxGeometry(
+                    0.04,
+                    0.22,
+                    0.18
+                );
+
+            const plateMesh =
+                new THREE.Mesh(
+                    plateGeo,
+                    lightShowerAssemblyMat
+                );
+
+            plateMesh.position.set(
+                x,
+                y,
+                z
+            );
+
+            addBlackBorders(plateMesh);
+            scene.add(plateMesh);
+
+            const knobGeo =
+                new THREE.CylinderGeometry(
+                    0.04,
+                    0.04,
+                    0.05,
+                    16
+                );
+
+            const knobMesh =
+                new THREE.Mesh(
+                    knobGeo,
+                    silverMetalMat
+                );
+
+            knobMesh.rotation.z =
+                Math.PI / 2;
+
+            knobMesh.position.set(
+                x + 0.03,
+                y,
+                z
+            );
+
+            addBlackBorders(knobMesh);
+            scene.add(knobMesh);
+
+            const handleLeverGeo =
+                new THREE.BoxGeometry(
+                    0.02,
+                    0.12,
+                    0.03
+                );
+
+            const handleLeverMesh =
+                new THREE.Mesh(
+                    handleLeverGeo,
+                    silverMetalMat
+                );
+
+            handleLeverMesh.position.set(
+                x + 0.05,
+                y + 0.05,
+                z
+            );
+
+            addBlackBorders(handleLeverMesh);
+            scene.add(handleLeverMesh);
+        }
+
+        addShowerTapAssembly(
+            1.58,
+            1.1,
+            6.6
+        );
+
+        // ============================================================
+        // COMMODE
+        // ============================================================
+
+        const commodeTankGeo =
+            new THREE.BoxGeometry(
+                0.45,
+                0.5,
+                0.22
+            );
+
+        const commodeTankMesh =
+            new THREE.Mesh(
+                commodeTankGeo,
+                commodeMat
+            );
+
+        commodeTankMesh.position.set(
+            2.25,
+            0.65,
+            7.81
+        );
+
+        addBlackBorders(commodeTankMesh);
+        scene.add(commodeTankMesh);
+
+        const commodeBowlGeo =
+            new THREE.BoxGeometry(
+                0.4,
+                0.4,
+                0.55
+            );
+
+        const commodeBowlMesh =
+            new THREE.Mesh(
+                commodeBowlGeo,
+                commodeMat
+            );
+
+        commodeBowlMesh.position.set(
+            2.25,
+            0.2,
+            7.45
+        );
+
+        addBlackBorders(commodeBowlMesh);
+        scene.add(commodeBowlMesh);
+
+        const pipeGeo =
+            new THREE.CylinderGeometry(
+                0.015,
+                0.015,
+                0.3,
+                16
+            );
+
+        const pipeMesh =
+            new THREE.Mesh(
+                pipeGeo,
+                whiteMat
+            );
+
+        pipeMesh.position.set(
+            2.25,
+            2.65,
+            6.75
+        );
+
+        addBlackBorders(pipeMesh);
+        scene.add(pipeMesh);
+
+        const headGeo =
+            new THREE.BoxGeometry(
+                0.4,
+                0.02,
+                0.4
+            );
+
+        const headMesh =
+            new THREE.Mesh(
+                headGeo,
+                whiteMat
+            );
+
+        headMesh.position.set(
+            2.25,
+            2.49,
+            6.75
+        );
+
+        addBlackBorders(headMesh);
+        scene.add(headMesh);
+
+        // ============================================================
+        // GLASS CABINET
+        // ============================================================
+
+        const glassCabinetGeo =
+            new THREE.BoxGeometry(
+                0.25,
+                1.85,
+                0.5
+            );
+
+        const glassCabinetMesh =
+            new THREE.Mesh(
+                glassCabinetGeo,
+                glassCabinetMat
+            );
+
+        glassCabinetMesh.position.set(
+            2.78,
+            0.925,
+            7.65
+        );
+
+        addBlackBorders(glassCabinetMesh);
+        scene.add(glassCabinetMesh);
+
+        const glassShelfGeo =
+            new THREE.BoxGeometry(
+                0.23,
+                0.015,
+                0.48
+            );
+
+        const glassShelfMesh =
+            new THREE.Mesh(
+                glassShelfGeo,
+                glassCabinetMat
+            );
+
+        glassShelfMesh.position.set(
+            2.78,
+            0.925,
+            7.65
+        );
+
+        addBlackBorders(glassShelfMesh);
+        scene.add(glassShelfMesh);
+
+        // ============================================================
+        // GALLERY CHAIR
+        // ============================================================
+
+        const galChairSeatGeo =
+            new THREE.BoxGeometry(
+                0.45,
+                0.05,
+                0.45
+            );
+
+        const galChairSeatMesh =
+            new THREE.Mesh(
+                galChairSeatGeo,
+                yellowChairMat
+            );
+
+        galChairSeatMesh.position.set(
+            1.85,
+            0.45,
+            8.35
+        );
+
+        addBlackBorders(galChairSeatMesh);
+        scene.add(galChairSeatMesh);
+
+        const galChairBackGeo =
+            new THREE.BoxGeometry(
+                0.04,
+                0.4,
+                0.45
+            );
+
+        const galChairBackMesh =
+            new THREE.Mesh(
+                galChairBackGeo,
+                yellowChairMat
+            );
+
+        galChairBackMesh.position.set(
+            1.63,
+            0.68,
+            8.35
+        );
+
+        addBlackBorders(galChairBackMesh);
+        scene.add(galChairBackMesh);
+
+        const galLegGeo =
+            new THREE.BoxGeometry(
+                0.03,
+                0.425,
+                0.03
+            );
+
+        const galLegPositions = [
+            [1.68, 0.2125, 8.15],
+            [2.02, 0.2125, 8.15],
+            [1.68, 0.2125, 8.55],
+            [2.02, 0.2125, 8.55]
+        ];
+
+        galLegPositions.forEach(pos => {
+            const legMesh =
+                new THREE.Mesh(
+                    galLegGeo,
+                    chairLegMat
+                );
+
+            legMesh.position.set(...pos);
+
+            addBlackBorders(legMesh);
+            scene.add(legMesh);
+        });
+
+        // ============================================================
+        // 8. SURFACE INTERSECTION CREASE LINES
+        // ============================================================
+
+        drawVerticalLine(
+            1.575,
+            4.575
+        );
+
+        drawVerticalLine(
+            1.575,
+            5.425
+        );
+
+        drawVerticalLine(
+            2.925,
+            5.425
+        );
+
+        drawVerticalLine(
+            2.925,
+            4.575
+        );
+
+        drawVerticalLine(
+            1.575,
+            5.575
+        );
+
+        drawVerticalLine(
+            1.575,
+            7.925
+        );
+
+        drawVerticalLine(
+            2.925,
+            7.925
+        );
+
+        drawVerticalLine(
+            2.925,
+            5.575
+        );
+
+        drawVerticalLine(
+            3.075,
+            4.575
+        );
+
+        drawVerticalLine(
+            3.075,
+            5.425
+        );
+
+        drawVerticalLine(
+            3.075,
+            5.575
+        );
+
+        drawVerticalLine(
+            3.075,
+            7.925
+        );
+
+        drawVerticalLine(
+            2.925,
+            6.5
+        );
+
+        drawVerticalLine(
+            3.075,
+            6.5
+        );
+
+        drawVerticalLine(
+            2.925,
+            5.5
+        );
+
+        drawVerticalLine(
+            3.075,
+            5.5
+        );
+
+        // Bedroom lines
+        drawVerticalLine(
+            0.075,
+            0.075
+        );
+
+        drawVerticalLine(
+            3.925,
+            0.075
+        );
+
+        drawVerticalLine(
+            3.925,
+            1.0
+        );
+
+        drawVerticalLine(
+            0.075,
+            4.425
+        );
+
+        drawVerticalLine(
+            2.925,
+            4.425
+        );
+
+        // Gallery half-wall lines
+        drawVerticalLine(
+            1.575,
+            8.075,
+            0,
+            HALF_WALL_H
+        );
+
+        drawVerticalLine(
+            1.575,
+            8.925,
+            0,
+            HALF_WALL_H
+        );
+
+        drawVerticalLine(
+            3.925,
+            8.925,
+            0,
+            HALF_WALL_H
+        );
+
+        drawVerticalLine(
+            3.925,
+            8.075,
+            0,
+            HALF_WALL_H
+        );
+
+        // ============================================================
+        // CONTROLS & NAVIGATION
+        // ============================================================
+
+        const controls =
+            new THREE.PointerLockControls(
+                camera,
+                document.body
+            );
+
+        const instructions =
+            document.getElementById(
+                'instructions'
+            );
+
+        instructions.addEventListener(
+            'click',
+            () => controls.lock()
+        );
+
+        controls.addEventListener(
+            'lock',
+            () => instructions.style.display = 'none'
+        );
+
+        controls.addEventListener(
+            'unlock',
+            () => instructions.style.display = 'block'
+        );
+
+        camera.position.set(
+            2.0,
+            1.6,
+            1.5
+        );
+
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+
+        const velocity =
+            new THREE.Vector3();
+
+        const direction =
+            new THREE.Vector3();
+
+        document.addEventListener(
+            'keydown',
+            (e) => {
+                if (e.code === 'KeyW')
+                    moveForward = true;
+
+                if (e.code === 'KeyS')
+                    moveBackward = true;
+
+                if (e.code === 'KeyA')
+                    moveLeft = true;
+
+                if (e.code === 'KeyD')
+                    moveRight = true;
+            }
+        );
+
+        document.addEventListener(
+            'keyup',
+            (e) => {
+                if (e.code === 'KeyW')
+                    moveForward = false;
+
+                if (e.code === 'KeyS')
+                    moveBackward = false;
+
+                if (e.code === 'KeyA')
+                    moveLeft = false;
+
+                if (e.code === 'KeyD')
+                    moveRight = false;
+            }
+        );
+
+        let prevTime = performance.now();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+
+            if (controls.isLocked) {
+                const delta =
+                    (time - prevTime) / 1000;
+
+                velocity.x -=
+                    velocity.x *
+                    10.0 *
+                    delta;
+
+                velocity.z -=
+                    velocity.z *
+                    10.0 *
+                    delta;
+
+                direction.z =
+                    Number(moveForward) -
+                    Number(moveBackward);
+
+                direction.x =
+                    Number(moveRight) -
+                    Number(moveLeft);
+
+                direction.normalize();
+
+                if (
+                    moveForward ||
+                    moveBackward
+                ) {
+                    velocity.z -=
+                        direction.z *
+                        12.0 *
+                        delta;
+                }
+
+                if (
+                    moveLeft ||
+                    moveRight
+                ) {
+                    velocity.x -=
+                        direction.x *
+                        12.0 *
+                        delta;
+                }
+
+                controls.moveRight(
+                    -velocity.x * delta
+                );
+
+                controls.moveForward(
+                    -velocity.z * delta
+                );
+            }
+
+            prevTime = time;
+
+            renderer.render(
+                scene,
+                camera
+            );
+        }
+
+        animate();
+
+        window.addEventListener(
+            'resize',
+            () => {
+                camera.aspect =
+                    window.innerWidth /
+                    window.innerHeight;
+
+                camera.updateProjectionMatrix();
+
+                renderer.setSize(
+                    window.innerWidth,
+                    window.innerHeight
+                );
+            }
+        );
+    </script>
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE)
+
+
+if __name__ == '__main__':
+    app.run(
+        debug=True,
+        port=5000
+    )
